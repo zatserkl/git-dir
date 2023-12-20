@@ -96,8 +96,11 @@ class GitDir:
             if branch in self.branch_noprefix or self.branch_noprefix == '*':
                 branch_dir = self.dir_top / branch
 
-            print(f'Create/update subdirectory: {branch_dir}')
-            self.mkdir(f'{branch_dir}')
+            if branch_dir.is_dir():
+                print(f'Update subdirectory: {branch_dir}')
+            else:
+                print(f'Create subdirectory: {branch_dir}')
+                self.mkdir(f'{branch_dir}')
 
             command = f'git archive {branch} | tar x -C \'{branch_dir}\''
             res = subprocess.call(command, shell=True)
