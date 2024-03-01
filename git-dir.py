@@ -60,7 +60,7 @@ class GitDir:
         if not self.git_found:
             return
         
-        # branch names to be exluded from prefixing
+        # branch names to be excluded from prefixing
         exclude_exact = []  # exact branch names
         exclude_start = []  # branch names startswith
 
@@ -74,7 +74,7 @@ class GitDir:
         elif type(noprefix) == type([]):
             # noprefix is a list
             for b in noprefix:
-                iasterix = b.find('*')
+                iasterisk = b.find('*')
                 if iasterisk < 0:
                     exclude_exact.append(b)
                 else:
