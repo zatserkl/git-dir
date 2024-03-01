@@ -8,101 +8,110 @@ from collections import defaultdict
 
 class GitDir:
     """
-    Creates a directory with subdirectory for each git branch and fills
-    them with the branch content.
+    Creates a directory with subdirectory for each git branch and fills it with the branch content.
+    If the subdirectory already exists, just update the traking content.
 
     Usage: run in the directory with .git repository e.g.
     GitDir().copy_branches()
     """
-    def __init__(self, dir_top='git-dir', branch_noprefix=None):
+    def __init__(self, dir_top='git-dir'):
         """
         dir-top: a directory to envelope branch subdirectories,
                  default is git-dir
-
-        branch_noprefix: a single name or a list of names: branches to exclude
-                         from prefixing with index
-                         '*' disables prefixing
-                         Default is ['main', 'master']
         """
         self.dir_top = pathlib.Path(dir_top)
         self.git_dir = pathlib.Path('.git')
         self.cwd = pathlib.Path.cwd()
 
-        if type(branch_noprefix) == type(''):
-            self.branch_noprefix = [branch_noprefix]
-        elif type(branch_noprefix) == type([]):
-            self.branch_noprefix = branch_noprefix[:]
-        else:
-            self.branch_noprefix = ['main', 'master']
-
         if self.git_dir.is_dir():
             self.git_found = True
-
-            command = 'git branch'  # local branches only
-
-            self.branches = subprocess.check_output(command, shell=True)
-            self.branches = self.branches.decode('utf-8').strip().split()
-
-            # remove asterisk string '*': a marker for the current branch
-            # print(f'branches list with "*": {self.branches}')
-            self.branches.remove('*')
-            # print(f'branches: {self.branches}')
-
-            self.branch_files = defaultdict(list)
-            for branch in self.branches:
-                command = f'git ls-tree -r --name-only {branch}'
-                file_list = subprocess.check_output(command, shell=True)
-                file_list = file_list.decode('utf-8').strip().split()
-                self.branch_files[branch] = file_list
-                # print(f'{branch} -- {self.branch_files[branch]}')
+            command = 'git for-each-ref --sort=committerdate refs/heads/ --format="%(refname:short)"'
+            # print(f'command: {command}')
+            self.branches = subprocess.check_output(command, shell=True).decode('utf-8').strip().split()
+            # print(f'branches list: {self.branches}')
         else:
             self.git_found = False
-            print(f'\nCannot find a git repository in the current dir {self.cwd}')
-            print('Stop\n\n')
+            print(f'\nCannot find a git repository in the current dir {self.cwd}\nStop\n\n')
             return
             # raise Exception(f'Directory .git was not found in the current directory {self.cwd}\nStop.\n\n')
 
-    @staticmethod  # just to namespace mkdir
+    @staticmethod  # to include stand-along function mkdir into class namespace
     def mkdir(dir):
         try:
             pathlib.Path(dir).mkdir(exist_ok=True, parents=True)
         except FileExistsError as e:
-            print(f'***Error: name {dir} is in use for the ordinary file\n')
-            raise Exception(f'Cannot create/use directory {dir}: this name is in use for ordinary file.\n')
+            print(f'***Error: name {dir} could be in use for the ordinary file\n')
+            raise Exception(f'Cannot create/use directory {dir}: this name could be in use for ordinary file.\n')
 
-    def copy_branches(self, index_from=1):
+    def copy_branches(self, noprefix=None, index_from=1):
         """
-        Creates the envelop directory with a directory for each branch
-        and copies there the branch content.
-        The directory name is prefixed by an index to keep the directories
-        sorted in the branch creation order.
-        The branches listed in the self.branch_noprefix will not have a prefix.
+        Creates an envelop folder with a directory for each git branch and copies there the branch content.
+        The directory name could be prefixed by an index to keep the directories sorted in the branch creation order.
         Example of the prefixed branch:
         01. my_first_branch
+
+        noprefix:   single name or list of names: branches to exclude from prefixing with index
+                    Asterisk * can be used as a wildcard for branch end, like rel*
+                    prefix='*' disables prefixing
+                    Default value (None) is equivalent to a list ['main', 'master']
 
         index_from: start prefix from this number.
         """
         if not self.git_found:
             return
+        
+        # branch names to be exluded from prefixing
+        exclude_exact = []  # exact branch names
+        exclude_start = []  # branch names startswith
+
+        if type(noprefix) == type(''):
+            # noprefix is a str
+            iasterisk = noprefix.find('*')
+            if iasterisk < 0:
+                exclude_exact.append(noprefix)
+            else:
+                exclude_start.append(noprefix[:iasterisk])
+        elif type(noprefix) == type([]):
+            # noprefix is a list
+            for b in noprefix:
+                iasterix = b.find('*')
+                if iasterisk < 0:
+                    exclude_exact.append(b)
+                else:
+                    exclude_start.append(b[:iasterisk])
+        else:
+            # default None (and any other type)
+            exclude_exact.extend(['main', 'master'])
 
         print(f'Create/update directory: {self.dir_top}')
         self.mkdir(self.dir_top)
 
         ok = True
-        for i, branch in enumerate(self.branches):
-            # prefix branch's directory name by index
-            branch_index = i + index_from
-            branch_dir = self.dir_top / f'{branch_index:0>2d}. {branch}'
-            if branch in self.branch_noprefix or self.branch_noprefix == '*':
-                branch_dir = self.dir_top / branch
+        iprefix = index_from
+        for branch in self.branches:
+            # prefix for the directory name
+            prefix = f'{iprefix:0>2d}. '  # prefix like "01. my_first_branch"
+            if branch in exclude_exact:
+                prefix = ''
+            else:
+                for b in exclude_start:
+                    if branch.startswith(b):
+                        prefix = ''
+                        break
+        
+            branch_dir = self.dir_top / (prefix + branch)  # "git-dir/01. my_first_branch"
+
+            if prefix:
+                iprefix += 1
 
             if branch_dir.is_dir():
                 print(f'Update subdirectory: {branch_dir}')
             else:
                 print(f'Create subdirectory: {branch_dir}')
-                self.mkdir(f'{branch_dir}')
-
-            command = f'git archive {branch} | tar x -C \'{branch_dir}\''
+                self.mkdir(branch_dir)
+            
+            command = f'git archive {branch} | tar x -C "{branch_dir}"'
+            # print(f'-- command: {command}')
             res = subprocess.call(command, shell=True)
             if res:
                 ok = False
@@ -115,4 +124,5 @@ class GitDir:
 
 
 if __name__ == '__main__':
-    GitDir().copy_branches()
+    # GitDir().copy_branches()
+    GitDir().copy_branches(noprefix='*')
