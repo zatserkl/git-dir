@@ -20,10 +20,12 @@ class GitDir:
                  default is git-dir
         """
         self.dir_top = pathlib.Path(dir_top)
-        self.git_dir = pathlib.Path('.git')
         self.cwd = pathlib.Path.cwd()
 
-        if self.git_dir.is_dir():
+        command = 'git rev-parse --is-inside-work-tree'
+        is_repo = subprocess.check_output(command, shell=True).decode('utf-8').strip().split()[0]
+
+        if is_repo == 'true':
             self.git_found = True
             command = 'git for-each-ref --sort=committerdate refs/heads/ --format="%(refname:short)"'
             # print(f'command: {command}')
